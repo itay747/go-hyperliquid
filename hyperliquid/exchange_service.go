@@ -19,7 +19,10 @@ type IExchangeAPI interface {
 
 	// Order management
 	CancelOrderByOID(coin string, orderID int) (any, error)
+	CancelOrderByCloid(symbol string, clientOrderId string) (*CancelOrderResponse, error)
 	BulkCancelOrders(cancels []CancelOidWire) (any, error)
+	BulkCancelOrdersByCloid(entries []CancelCloidWire) (*CancelOrderResponse, error)
+
 	CancelAllOrdersByCoin(coin string) (any, error)
 	CancelAllOrders() (any, error)
 	ClosePosition(coin string) (*PlaceOrderResponse, error)
@@ -241,8 +244,43 @@ func (api *ExchangeAPI) BulkModifyOrders(modifyRequests []ModifyOrderRequest) (*
 }
 
 // Cancel exact order by OID
-func (api *ExchangeAPI) CancelOrderByOID(coin string, orderID int64) (*CancelOrderResponse, error) {
+func (api *ExchangeAPI) CancelOrderByOID(coin string, orderID int) (*CancelOrderResponse, error) {
 	return api.BulkCancelOrders([]CancelOidWire{{Asset: api.meta[coin].AssetId, Oid: int(orderID)}})
+}
+
+func (api *ExchangeAPI) BulkCancelOrdersByCloid(entries []CancelCloidWire) (*CancelOrderResponse, error) {
+	if len(entries) == 0 {
+		return nil, APIError{Message: "no cloID entries provided"}
+	}
+	nonceValue := GetNonce()
+
+	api.debug("BulkCancelOrdersByCloid nonce: %d", nonceValue)
+	action := CancelCloidOrderAction{
+		Type:    "cancelByCloid",
+		Cancels: entries,
+	}
+	verifiedV, verifiedR, verifiedS, signError := api.SignL1Action(action, nonceValue)
+	if signError != nil {
+		api.debug("BulkCancelOrdersByCloid sign error: %s", signError)
+		return nil, signError
+	}
+
+	request := ExchangeRequest{
+		Action:       action,
+		Nonce:        nonceValue,
+		Signature:    ToTypedSig(verifiedR, verifiedS, verifiedV),
+		VaultAddress: nil,
+	}
+	return MakeUniversalRequest[CancelOrderResponse](api, request)
+}
+
+// Cancel order(s) by client order ID
+// https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#cancel-order-s-by-cloid
+func (api *ExchangeAPI) CancelOrderByCloid(symbol string, cloid string) (*CancelOrderResponse, error) {
+	return api.BulkCancelOrdersByCloid([]CancelCloidWire{{
+		Asset: api.meta[symbol].AssetId,
+		Cloid: cloid,
+	}})
 }
 
 // Cancel all orders for a given coin
