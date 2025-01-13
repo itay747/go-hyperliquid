@@ -33,6 +33,21 @@ func HexToBytes(addr string) []byte {
 		return b
 	}
 }
+func HexToInt(hexString string) (*big.Int, error) {
+	value := new(big.Int)
+	if len(hexString) > 1 && hexString[:2] == "0x" {
+		hexString = hexString[2:]
+	}
+	_, success := value.SetString(hexString, 16)
+	if !success {
+		return nil, fmt.Errorf("invalid hexadecimal string: %s", hexString)
+	}
+	return value, nil
+}
+
+func IntToHex(value *big.Int) string {
+	return "0x" + value.Text(16) 
+}
 
 func OrderWiresToOrderAction(orders []OrderWire, grouping Grouping) PlaceOrderAction {
 	return PlaceOrderAction{
@@ -51,6 +66,7 @@ func OrderRequestToWire(req OrderRequest, meta map[string]AssetInfo) OrderWire {
 		SizePx:     FloatToWire(req.Sz, &info.SzDecimals),
 		ReduceOnly: req.ReduceOnly,
 		OrderType:  OrderTypeToWire(req.OrderType),
+		Cloid:      req.Cloid,
 	}
 }
 func ModifyOrderRequestToWire(req ModifyOrderRequest, meta map[string]AssetInfo) ModifyOrderWire {
@@ -64,6 +80,7 @@ func ModifyOrderRequestToWire(req ModifyOrderRequest, meta map[string]AssetInfo)
 			SizePx:     FloatToWire(req.Sz, &info.SzDecimals),
 			ReduceOnly: req.ReduceOnly,
 			OrderType:  OrderTypeToWire(req.OrderType),
+			Cloid:      req.Cloid,
 		},
 	}
 }
