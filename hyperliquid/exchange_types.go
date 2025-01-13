@@ -154,7 +154,7 @@ type InnerCancelResponse struct {
 }
 
 type CancelResponseStatuses struct {
-	Statuses []string `json:"statuses"`
+    Statuses []StatusResponse `json:"statuses"`
 }
 
 type RestingStatus struct {
