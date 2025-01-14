@@ -1,5 +1,7 @@
 package hyperliquid
 
+import "encoding/json"
+
 type RsvSignature struct {
 	R string `json:"r"`
 	S string `json:"s"`
@@ -127,6 +129,23 @@ type StatusResponse struct {
 	Resting RestingStatus `json:"resting,omitempty"`
 	Filled  FilledStatus  `json:"filled,omitempty"`
 	Error   string        `json:"error,omitempty"`
+}
+func (sr *StatusResponse) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		if s == "success" {
+			return nil
+		}
+		sr.Error = s
+		return nil
+	}
+	type alias StatusResponse
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*sr = StatusResponse(tmp)
+	return nil
 }
 
 type CancelRequest struct {
