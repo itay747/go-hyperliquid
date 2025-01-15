@@ -178,7 +178,7 @@ func (api *ExchangeAPI) BulkOrders(requests []OrderRequest, grouping Grouping) (
 	for _, req := range requests {
 		wires = append(wires, OrderRequestToWire(req, api.meta))
 	}
-	timestamp := GetNonce()
+	timestamp := NextNonce()
 	action := OrderWiresToOrderAction(wires, grouping)
 	v, r, s, err := api.SignL1Action(action, timestamp)
 	if err != nil {
@@ -197,7 +197,7 @@ func (api *ExchangeAPI) BulkOrders(requests []OrderRequest, grouping Grouping) (
 // Cancel order(s)
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#cancel-order-s
 func (api *ExchangeAPI) BulkCancelOrders(cancels []CancelOidWire) (*CancelOrderResponse, error) {
-	timestamp := GetNonce()
+	timestamp := NextNonce()
 	action := CancelOidOrderAction{
 		Type:    "cancel",
 		Cancels: cancels,
@@ -229,7 +229,7 @@ func (api *ExchangeAPI) BulkModifyOrders(modifyRequests []ModifyOrderRequest) (*
 		Modifies: wires,
 	}
 
-	timestamp := GetNonce()
+	timestamp := NextNonce()
 	vVal, rVal, sVal, signErr := api.SignL1Action(action, timestamp)
 	if signErr != nil {
 		return nil, signErr
@@ -252,7 +252,7 @@ func (api *ExchangeAPI) BulkCancelOrdersByCloid(entries []CancelCloidWire) (*Can
 	if len(entries) == 0 {
 		return nil, APIError{Message: "no cloID entries provided"}
 	}
-	nonceValue := GetNonce()
+	nonceValue := NextNonce()
 
 	api.debug("BulkCancelOrdersByCloid nonce: %d", nonceValue)
 	action := CancelCloidOrderAction{
@@ -320,7 +320,7 @@ func (api *ExchangeAPI) CancelAllOrders() (*CancelOrderResponse, error) {
 // Update leverage for a coin
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#update-leverage
 func (api *ExchangeAPI) UpdateLeverage(coin string, isCross bool, leverage int) (*DefaultExchangeResponse, error) {
-	timestamp := GetNonce()
+	timestamp := NextNonce()
 	action := UpdateLeverageAction{
 		Type:     "updateLeverage",
 		Asset:    api.meta[coin].AssetId,
@@ -344,7 +344,7 @@ func (api *ExchangeAPI) UpdateLeverage(coin string, isCross bool, leverage int) 
 // Initiate a withdraw request
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#initiate-a-withdrawal-request
 func (api *ExchangeAPI) Withdraw(destination string, amount float64) (*WithdrawResponse, error) {
-	nonce := GetNonce()
+	nonce := NextNonce()
 	action := WithdrawAction{
 		Type:        "withdraw3",
 		Destination: destination,
@@ -382,7 +382,7 @@ func (api *ExchangeAPI) BuildBulkOrdersEIP712(requests []OrderRequest, grouping 
 	for _, req := range requests {
 		wires = append(wires, OrderRequestToWire(req, api.meta))
 	}
-	timestamp := GetNonce()
+	timestamp := NextNonce()
 	action := OrderWiresToOrderAction(wires, grouping)
 	srequest, err := api.BuildEIP712Message(action, timestamp)
 	if err != nil {
