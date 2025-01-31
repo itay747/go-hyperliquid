@@ -93,6 +93,11 @@ func OrderTypeToWire(orderType OrderType) OrderTypeWire {
 // Hyperliquid only allows at most 6 digits.
 func FloatToWire(x float64, szDecimals *int) string {
 	bigf := big.NewFloat(x)
+	if x >= 100_000 {
+		// Round and return e.g. "100000"
+		return strconv.FormatFloat(x, 'f', 0, 64)
+	}
+
 	var maxDecSz uint
 	if szDecimals != nil {
 		maxDecSz = uint(*szDecimals)

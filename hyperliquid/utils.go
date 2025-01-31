@@ -3,10 +3,14 @@ package hyperliquid
 import (
 	"crypto/rand"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
+
+var nonceLock sync.Mutex
+var lastNonce int64
 
 // Retruns a random cloid (Client Order ID)
 func GetRandomCloid() string {
@@ -66,4 +70,18 @@ func GetDefaultTimeRange() (int64, int64) {
 	endTime := time.Now().UnixMilli()
 	startTime := time.Now().AddDate(0, 0, -90).UnixMilli()
 	return startTime, endTime
+}
+
+
+
+func NextNonce() uint64 {
+	nonceLock.Lock()
+	defer nonceLock.Unlock()
+	now := time.Now().UnixNano() / 1_000_000
+	if now <= lastNonce {
+		lastNonce++
+	} else {
+		lastNonce = now
+	}
+	return uint64(lastNonce)
 }
