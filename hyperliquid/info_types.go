@@ -30,7 +30,9 @@ type UserState struct {
 	MarginSummary              MarginSummary   `json:"marginSummary"`
 	Time                       int64           `json:"time"`
 }
-
+type UserRoleResponse struct {
+	Role string `json:"role"`
+}
 type AssetPosition struct {
 	Position Position `json:"position"`
 	Type     string   `json:"type"`

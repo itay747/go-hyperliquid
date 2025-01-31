@@ -36,6 +36,7 @@ type ExchangeAPI struct {
 	address      string
 	baseEndpoint string
 	meta         map[string]AssetInfo
+	role         string
 }
 
 // NewExchangeAPI creates a new default ExchangeAPI.
@@ -186,7 +187,7 @@ func (api *ExchangeAPI) BulkOrders(requests []OrderRequest, grouping Grouping) (
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: nil,
+		VaultAddress: api.effectiveVaultAddress(),
 	}
 	return MakeUniversalRequest[PlaceOrderResponse](api, request)
 }
@@ -208,7 +209,7 @@ func (api *ExchangeAPI) BulkCancelOrders(cancels []CancelOidWire) (*CancelOrderR
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: nil,
+		VaultAddress: api.effectiveVaultAddress(),
 	}
 	return MakeUniversalRequest[CancelOrderResponse](api, request)
 }
@@ -235,7 +236,7 @@ func (api *ExchangeAPI) BulkModifyOrders(modifyRequests []ModifyOrderRequest) (*
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(rVal, sVal, vVal),
-		VaultAddress: nil,
+		VaultAddress: api.effectiveVaultAddress(),
 	}
 	return MakeUniversalRequest[PlaceOrderResponse](api, request)
 }
@@ -298,7 +299,7 @@ func (api *ExchangeAPI) UpdateLeverage(coin string, isCross bool, leverage int) 
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: nil,
+		VaultAddress: api.effectiveVaultAddress(),
 	}
 	return MakeUniversalRequest[DefaultExchangeResponse](api, request)
 }
@@ -325,7 +326,7 @@ func (api *ExchangeAPI) Withdraw(destination string, amount float64) (*WithdrawR
 		Action:       action,
 		Nonce:        nonce,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: nil,
+		VaultAddress: api.effectiveVaultAddress(),
 	}
 	return MakeUniversalRequest[WithdrawResponse](api, request)
 }
@@ -346,7 +347,8 @@ func (api *ExchangeAPI) BuildBulkOrdersEIP712(requests []OrderRequest, grouping 
 	}
 	timestamp := GetNonce()
 	action := OrderWiresToOrderAction(wires, grouping)
-	srequest, err := api.BuildEIP712Message(action, timestamp)
+	vaultAddress := api.effectiveVaultAddress()
+	srequest, err := api.BuildEIP712Message(action, timestamp, vaultAddress)
 	if err != nil {
 		api.debug("Error building EIP712 message: %s", err)
 		return apitypes.TypedData{}, err
@@ -357,4 +359,12 @@ func (api *ExchangeAPI) BuildBulkOrdersEIP712(requests []OrderRequest, grouping 
 // Build order EIP712 message
 func (api *ExchangeAPI) BuildOrderEIP712(request OrderRequest, grouping Grouping) (apitypes.TypedData, error) {
 	return api.BuildBulkOrdersEIP712([]OrderRequest{request}, grouping)
+}
+
+// Return the vaultAddress for sub-accounts and vaults
+func (api *ExchangeAPI) effectiveVaultAddress() string {
+	if api.role == "vault" || api.role == "subAccount" {
+		return api.AccountAddress()
+	}
+	return ""
 }
