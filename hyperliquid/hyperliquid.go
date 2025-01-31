@@ -36,6 +36,14 @@ func NewHyperliquid(config *HyperliquidClientConfig) *Hyperliquid {
 	exchangeAPI.SetAccountAddress(defaultConfig.AccountAddress)
 	infoAPI := NewInfoAPI(defaultConfig.IsMainnet)
 	infoAPI.SetAccountAddress(defaultConfig.AccountAddress)
+
+	roleResp, err := infoAPI.GetUserRole(config.AccountAddress)
+	if err != nil {
+		exchangeAPI.debug("Error querying user role: %s", err)
+	} else {
+		exchangeAPI.role = roleResp.Role
+	}
+
 	return &Hyperliquid{
 		ExchangeAPI: *exchangeAPI,
 		InfoAPI:     *infoAPI,

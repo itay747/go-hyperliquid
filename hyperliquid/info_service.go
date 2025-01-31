@@ -203,6 +203,16 @@ func (api *InfoAPI) GetAccountNonFundingUpdates(startTime int64, endTime int64) 
 	return api.GetNonFundingUpdates(api.AccountAddress(), startTime, endTime)
 }
 
+// Retrieve a user's role ("missing", "user", "agent", "vault", or "subAccount")
+// https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint#query-a-users-role
+func (api *InfoAPI) GetUserRole(address string) (*UserRoleResponse, error) {
+	request := InfoRequest{
+		User:  address,
+		Typez: "userRole",
+	}
+	return MakeUniversalRequest[UserRoleResponse](api, request)
+}
+
 // Retrieve historical funding rates
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals#retrieve-historical-funding-rates
 func (api *InfoAPI) GetHistoricalFundingRates(coin string, startTime int64, endTime int64) (*[]HistoricalFundingRate, error) {
