@@ -38,7 +38,7 @@ func (api *ExchangeAPI) SignL1Action(action any, timestamp uint64) (byte, [32]by
 	if api.role == "vault" || api.role == "subAccount" {
 		vault = api.AccountAddress()
 	}
-	srequest, err := api.BuildEIP712Message(action, timestamp, vault)
+	srequest, err := api.BuildEIP712Message(action, timestamp, &vault)
 	if err != nil {
 		api.debug("Error building EIP712 message: %s", err)
 		return 0, [32]byte{}, [32]byte{}, err
@@ -46,7 +46,7 @@ func (api *ExchangeAPI) SignL1Action(action any, timestamp uint64) (byte, [32]by
 	return api.Sign(srequest)
 }
 
-func (api *ExchangeAPI) BuildEIP712Message(action any, timestamp uint64, vaultAddress string) (*SignRequest, error) {
+func (api *ExchangeAPI) BuildEIP712Message(action any, timestamp uint64, vaultAddress *string) (*SignRequest, error) {
 	hash, err := buildActionHash(action, vaultAddress, timestamp)
 	if err != nil {
 		return nil, err

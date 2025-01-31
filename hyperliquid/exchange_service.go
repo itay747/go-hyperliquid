@@ -348,6 +348,7 @@ func (api *ExchangeAPI) BuildBulkOrdersEIP712(requests []OrderRequest, grouping 
 	timestamp := NextNonce()
 	action := OrderWiresToOrderAction(wires, grouping)
 	vaultAddress := api.effectiveVaultAddress()
+
 	srequest, err := api.BuildEIP712Message(action, timestamp, vaultAddress)
 	if err != nil {
 		api.debug("Error building EIP712 message: %s", err)
@@ -362,9 +363,10 @@ func (api *ExchangeAPI) BuildOrderEIP712(request OrderRequest, grouping Grouping
 }
 
 // Return the vaultAddress for sub-accounts and vaults
-func (api *ExchangeAPI) effectiveVaultAddress() string {
+func (api *ExchangeAPI) effectiveVaultAddress() *string {
+	vaultAddress := api.AccountAddress()
 	if api.role == "vault" || api.role == "subAccount" {
-		return api.AccountAddress()
+		return &vaultAddress
 	}
-	return ""
+	return nil
 }

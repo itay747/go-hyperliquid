@@ -11,7 +11,7 @@ type ExchangeRequest struct {
 	Action       any          `json:"action"`
 	Nonce        uint64       `json:"nonce"`
 	Signature    RsvSignature `json:"signature"`
-	VaultAddress string       `json:"vaultAddress"`
+	VaultAddress *string      `json:"vaultAddress,omitempty" msgpack:",omitempty"`
 }
 
 type AssetInfo struct {

@@ -103,7 +103,7 @@ func SignatureToVRS(sig []byte) (byte, [32]byte, [32]byte, error) {
 }
 
 // Create a hash of an action (json object)
-func buildActionHash(action any, vaultAd string, nonce uint64) (common.Hash, error) {
+func buildActionHash(action any, vaultAd *string, nonce uint64) (common.Hash, error) {
 	data, err := msgpack.Marshal(action)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("error while marshaling action: %s", err)
@@ -112,11 +112,11 @@ func buildActionHash(action any, vaultAd string, nonce uint64) (common.Hash, err
 	binary.BigEndian.PutUint64(nonceBytes, uint64(nonce))
 	data = ArrayAppend(data, nonceBytes)
 
-	if vaultAd == "" {
+	if vaultAd == nil || *vaultAd == "" {
 		data = ArrayAppend(data, []byte("\x00"))
 	} else {
 		data = ArrayAppend(data, []byte("\x01"))
-		data = ArrayAppend(data, HexToBytes(vaultAd))
+		data = ArrayAppend(data, HexToBytes(*vaultAd))
 	}
 	result := crypto.Keccak256Hash(data)
 	return result, nil
