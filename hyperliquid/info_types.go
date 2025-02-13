@@ -3,7 +3,7 @@ package hyperliquid
 // Base request for /info
 type InfoRequest struct {
 	User      string `json:"user,omitempty"`
-	Typez     string `json:"type"`
+	Type      string `json:"type"`
 	Oid       string `json:"oid,omitempty"`
 	Coin      string `json:"coin,omitempty"`
 	StartTime int64  `json:"startTime,omitempty"`
@@ -11,17 +11,41 @@ type InfoRequest struct {
 }
 
 type UserStateRequest struct {
-	User  string `json:"user"`
-	Typez string `json:"type"`
+	User string `json:"user"`
+	Type string `json:"type"`
 }
 
+type Role string
+
+const (
+	RoleUser       Role = "user"
+	RoleAgent      Role = "agent"
+	RoleVault      Role = "vault"
+	RoleSubAccount Role = "subAccount"
+	RoleMissing    Role = "missing"
+)
+
+// IsVaultOrSubAccount checks if the role is either Vault or SubAccount.
+func (r Role) IsVaultOrSubAccount() bool {
+	return r == RoleVault || r == RoleSubAccount
+}
+
+// UserRole represents a user role.
+// Role can be one of "user", "agent", "vault",  "subAccount" or "missing"
+type UserRole struct {
+	Role Role `json:"role"`
+	Data struct {
+		Master string `json:"master,omitempty"`
+	} `json:"data,omitempty"`
+}
+
+// Asset represents an asset.
 type Asset struct {
 	Name         string `json:"name"`
 	SzDecimals   int    `json:"szDecimals"`
 	MaxLeverage  int    `json:"maxLeverage"`
 	OnlyIsolated bool   `json:"onlyIsolated"`
 }
-
 type UserState struct {
 	Withdrawable               float64         `json:"withdrawable,string"`
 	CrossMaintenanceMarginUsed float64         `json:"crossMaintenanceMarginUsed,string"`
@@ -31,7 +55,7 @@ type UserState struct {
 	Time                       int64           `json:"time"`
 }
 type UserRoleResponse struct {
-	Role string `json:"role"`
+	UserRole UserRole `json:"userRole"`
 }
 type AssetPosition struct {
 	Position Position `json:"position"`
@@ -54,6 +78,24 @@ type Position struct {
 		SinceOpne float64 `json:"sinceOpen,string"`
 		SinceChan float64 `json:"sinceChange,string"`
 	} `json:"cumFunding"`
+}
+type UserStateSpot struct {
+	Balances []SpotAssetPosition `json:"balances"`
+}
+
+type SpotAssetPosition struct {
+	/*
+			 "coin": "USDC",
+		            "token": 0,
+		            "hold": "0.0",
+		            "total": "14.625485",
+		            "entryNtl": "0.0"
+	*/
+	Coin     string  `json:"coin"`
+	Token    int     `json:"token"`
+	Hold     float64 `json:"hold,string"`
+	Total    float64 `json:"total,string"`
+	EntryNtl float64 `json:"entryNtl,string"`
 }
 
 type Order struct {
@@ -85,6 +127,25 @@ type MarginSummary struct {
 	TotalMarginUsed float64 `json:"totalMarginUsed,string"`
 	TotalNtlPos     float64 `json:"totalNtlPos,string"`
 	TotalRawUsd     float64 `json:"totalRawUsd,string"`
+}
+
+type SpotMeta struct {
+	Universe []struct {
+		Tokens      []int  `json:"tokens"`
+		Name        string `json:"name"`
+		Index       int    `json:"index"`
+		IsCanonical bool   `json:"isCanonical"`
+	} `json:"universe"`
+	Tokens []struct {
+		Name        string `json:"name"`
+		SzDecimals  int    `json:"szDecimals"`
+		WeiDecimals int    `json:"weiDecimals"`
+		Index       int    `json:"index"`
+		TokenID     string `json:"tokenId"`
+		IsCanonical bool   `json:"isCanonical"`
+		EvmContract any    `json:"evmContract"`
+		FullName    any    `json:"fullName"`
+	} `json:"tokens"`
 }
 
 type Meta struct {
@@ -147,8 +208,8 @@ type CandleSnapshotSubRequest struct {
 }
 
 type CandleSnapshotRequest struct {
-	Typez string                   `json:"type"`
-	Req   CandleSnapshotSubRequest `json:"req"`
+	Type string                   `json:"type"`
+	Req  CandleSnapshotSubRequest `json:"req"`
 }
 
 type CandleSnapshot struct {
@@ -180,4 +241,17 @@ type RatesLimits struct {
 	CumVlm        float64 `json:"cumVlm,string"`
 	NRequestsUsed int     `json:"nRequestsUsed"`
 	NRequestsCap  int     `json:"nRequestsCap"`
+}
+
+type SpotMetaAndAssetCtxsResponse [2]interface{} // Array of exactly 2 elements
+
+type Market struct {
+	PrevDayPx         string `json:"prevDayPx,omitempty"`
+	DayNtlVlm         string `json:"dayNtlVlm,omitempty"`
+	MarkPx            string `json:"markPx,omitempty"`
+	MidPx             string `json:"midPx,omitempty"`
+	CirculatingSupply string `json:"circulatingSupply,omitempty"`
+	Coin              string `json:"coin,omitempty"`
+	TotalSupply       string `json:"totalSupply,omitempty"`
+	DayBaseVlm        string `json:"dayBaseVlm,omitempty"`
 }

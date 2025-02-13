@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -46,7 +47,7 @@ func HexToInt(hexString string) (*big.Int, error) {
 }
 
 func IntToHex(value *big.Int) string {
-	return "0x" + value.Text(16) 
+	return "0x" + value.Text(16)
 }
 
 func OrderWiresToOrderAction(orders []OrderWire, grouping Grouping) PlaceOrderAction {
@@ -57,10 +58,20 @@ func OrderWiresToOrderAction(orders []OrderWire, grouping Grouping) PlaceOrderAc
 	}
 }
 
-func OrderRequestToWire(req OrderRequest, meta map[string]AssetInfo) OrderWire {
+func (req *OrderRequest) isSpot() bool {
+	return strings.ContainsAny(req.Coin, "@-")
+}
+
+func (req *ModifyOrderRequest) isSpot() bool {
+	return strings.ContainsAny(req.Coin, "@-")
+}
+
+// ToWire (OrderRequest) converts an OrderRequest to an OrderWire using the provided metadata.
+// https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids
+func (req *OrderRequest) ToWire(meta map[string]AssetInfo) OrderWire {
 	info := meta[req.Coin]
 	return OrderWire{
-		Asset:      info.AssetId,
+		Asset:      info.AssetID,
 		IsBuy:      req.IsBuy,
 		LimitPx:    FloatToWire(req.LimitPx, nil),
 		SizePx:     FloatToWire(req.Sz, &info.SzDecimals),
@@ -69,12 +80,14 @@ func OrderRequestToWire(req OrderRequest, meta map[string]AssetInfo) OrderWire {
 		Cloid:      req.Cloid,
 	}
 }
-func ModifyOrderRequestToWire(req ModifyOrderRequest, meta map[string]AssetInfo) ModifyOrderWire {
+
+// ToWire (ModifyOrderRequest) converts a ModifyOrderRequest to a ModifyOrderWire using the provided metadata.
+func (req *ModifyOrderRequest) ToWire(meta map[string]AssetInfo) ModifyOrderWire {
 	info := meta[req.Coin]
 	return ModifyOrderWire{
-		OrderId: req.OrderId,
+		OrderID: req.OrderID,
 		Order: OrderWire{
-			Asset:      info.AssetId,
+			Asset:      info.AssetID,
 			IsBuy:      req.IsBuy,
 			LimitPx:    FloatToWire(req.LimitPx, nil),
 			SizePx:     FloatToWire(req.Sz, &info.SzDecimals),
@@ -139,4 +152,39 @@ func StructToMap(strct any) (res map[string]interface{}, err error) {
 	}
 	json.Unmarshal(a, &res)
 	return res, nil
+}
+
+// RoundOrderSize rounds the order size to the nearest tick size
+func RoundOrderSize(x float64, szDecimals int) string {
+	newX := math.Round(x*math.Pow10(szDecimals)) / math.Pow10(szDecimals)
+	// TODO: add rounding
+	return big.NewFloat(newX).Text('f', szDecimals)
+}
+
+// RoundOrderPrice rounds the order price to the nearest tick size
+func RoundOrderPrice(x float64, szDecimals int, maxDecimals int) string {
+	maxSignFigures := 5
+	allowedDecimals := maxDecimals - szDecimals
+	numberOfDigitsInIntegerPart := len(strconv.Itoa(int(x)))
+	if numberOfDigitsInIntegerPart >= maxSignFigures {
+		return RoundOrderSize(x, 0)
+	}
+	allowedSignFigures := maxSignFigures - numberOfDigitsInIntegerPart
+	if x >= 1 {
+		return RoundOrderSize(x, min(allowedSignFigures, allowedDecimals))
+	}
+
+	text := RoundOrderSize(x, allowedDecimals)
+	startSignFigures := false
+	for i := 2; i < len(text); i++ {
+		if text[i] == '0' && !startSignFigures {
+			continue
+		}
+		startSignFigures = true
+		allowedSignFigures--
+		if allowedSignFigures == 0 {
+			return text[:i+1]
+		}
+	}
+	return text
 }

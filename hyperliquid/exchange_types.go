@@ -1,6 +1,9 @@
 package hyperliquid
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type RsvSignature struct {
 	R string `json:"r"`
@@ -8,7 +11,6 @@ type RsvSignature struct {
 	V byte   `json:"v"`
 }
 
-// Base request for /exchange endpoint
 type ExchangeRequest struct {
 	Action       any          `json:"action"`
 	Nonce        uint64       `json:"nonce"`
@@ -17,8 +19,10 @@ type ExchangeRequest struct {
 }
 
 type AssetInfo struct {
-	SzDecimals int
-	AssetId    int
+	SzDecimals  int
+	WeiDecimals int
+	AssetID     int
+	SpotName    string // for spot asset (e.g. "@107")
 }
 
 type OrderRequest struct {
@@ -33,7 +37,7 @@ type OrderRequest struct {
 
 type OrderType struct {
 	Limit   *LimitOrderType   `json:"limit,omitempty" msgpack:"limit,omitempty"`
-	Trigger *TriggerOrderType `json:"trigger,omitempty"  msgpack:"trigger,omitempty"`
+	Trigger *TriggerOrderType `json:"trigger,omitempty" msgpack:"trigger,omitempty"`
 }
 
 type LimitOrderType struct {
@@ -76,21 +80,30 @@ type OrderWire struct {
 	OrderType  OrderTypeWire `msgpack:"t" json:"t"`
 	Cloid      string        `msgpack:"c,omitempty" json:"c,omitempty"`
 }
-type ModifyResponse struct {
-	Status   string                  `json:"status"`
-	Response PlaceOrderInnerResponse `json:"response"`
+
+type OrderTypeWire struct {
+	Limit   *LimitOrderType   `json:"limit,omitempty" msgpack:"limit,omitempty"`
+	Trigger *TriggerOrderType `json:"trigger,omitempty" msgpack:"trigger,omitempty"`
 }
+
+type PlaceOrderAction struct {
+	Type     string      `msgpack:"type" json:"type"`
+	Orders   []OrderWire `json:"orders"`
+	Grouping Grouping    `json:"grouping"`
+}
+
 type ModifyOrderWire struct {
-	OrderId int       `msgpack:"oid" json:"oid"`
+	OrderID int       `msgpack:"oid" json:"oid"`
 	Order   OrderWire `msgpack:"order" json:"order"`
 }
+
 type ModifyOrderAction struct {
 	Type     string            `msgpack:"type" json:"type"`
 	Modifies []ModifyOrderWire `msgpack:"modifies" json:"modifies"`
 }
 
 type ModifyOrderRequest struct {
-	OrderId    int       `json:"oid"`
+	OrderID    int       `json:"oid"`
 	Coin       string    `json:"coin"`
 	IsBuy      bool      `json:"is_buy"`
 	Sz         float64   `json:"sz"`
@@ -100,23 +113,12 @@ type ModifyOrderRequest struct {
 	Cloid      string    `json:"cloid,omitempty"`
 }
 
-type OrderTypeWire struct {
-	Limit   *LimitOrderType   `json:"limit,omitempty" msgpack:"limit,omitempty"`
-	Trigger *TriggerOrderType `json:"trigger,omitempty" msgpack:"trigger,omitempty"`
+type OrderResponse struct {
+	Status   string             `json:"status"`
+	Response OrderInnerResponse `json:"response"`
 }
 
-type PlaceOrderAction struct {
-	Type     string      `msgpack:"type" json:"type"`
-	Orders   []OrderWire `msgpack:"orders" json:"orders"`
-	Grouping Grouping    `msgpack:"grouping" json:"grouping"`
-}
-
-type PlaceOrderResponse struct {
-	Status   string                  `json:"status"`
-	Response PlaceOrderInnerResponse `json:"response"`
-}
-
-type PlaceOrderInnerResponse struct {
+type OrderInnerResponse struct {
 	Type string       `json:"type"`
 	Data DataResponse `json:"data"`
 }
@@ -129,64 +131,54 @@ type StatusResponse struct {
 	Resting RestingStatus `json:"resting,omitempty"`
 	Filled  FilledStatus  `json:"filled,omitempty"`
 	Error   string        `json:"error,omitempty"`
+	Status  string        `json:"status,omitempty"`
 }
+
+// UnmarshalJSON implements custom unmarshaling for StatusResponse.
+// It first checks if the incoming JSON is a simple string. If so, it assigns the
+// value to the Status field. Otherwise, it unmarshals the JSON into the struct normally.
 func (sr *StatusResponse) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal data as a string.
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
-		if s == "success" {
-			return nil
-		}
-		sr.Error = s
+		sr.Status = s
 		return nil
 	}
-	type alias StatusResponse
-	var tmp alias
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return err
+
+	// Otherwise, unmarshal as a full object.
+	// Use an alias to avoid infinite recursion.
+	type Alias StatusResponse
+	var alias Alias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return fmt.Errorf("StatusResponse: unable to unmarshal data as string or object: %w", err)
 	}
-	*sr = StatusResponse(tmp)
+	*sr = StatusResponse(alias)
 	return nil
 }
 
 type CancelRequest struct {
-	OrderId int `json:"oid"`
+	OrderID int `json:"oid"`
 	Coin    int `json:"coin"`
-}
-
-type CancelOidOrderAction struct {
-	Type    string          `msgpack:"type" json:"type"`
-	Cancels []CancelOidWire `msgpack:"cancels" json:"cancels"`
-}
-type CancelCloidOrderAction struct {
-	Type    string            `msgpack:"type" json:"type"`
-	Cancels []CancelCloidWire `msgpack:"cancels" json:"cancels"`
 }
 
 type CancelOidWire struct {
 	Asset int `msgpack:"a" json:"a"`
 	Oid   int `msgpack:"o" json:"o"`
 }
+
 type CancelCloidWire struct {
 	Asset int    `msgpack:"asset" json:"asset"`
-	Cloid string `msgpack:"cloid" json:"cloid"`
+	Cloid string `json:"cloid"`
 }
 
-type CancelOrderResponse struct {
-	Status   string              `json:"status"`
-	Response InnerCancelResponse `json:"response"`
+type CancelOidOrderAction struct {
+	Type    string          `msgpack:"type" json:"type"`
+	Cancels []CancelOidWire `json:"cancels"`
 }
 
-type InnerCancelResponse struct {
-	Type string                 `json:"type"`
-	Data CancelResponseStatuses `json:"data"`
-}
-
-type CancelResponseStatuses struct {
-    Statuses []StatusResponse `json:"statuses"`
-}
-
-type RestingStatus struct {
-	OrderId int `json:"oid"`
+type CancelCloidOrderAction struct {
+	Type    string            `msgpack:"type" json:"type"`
+	Cancels []CancelCloidWire `json:"cancels"`
 }
 
 type CloseRequest struct {
@@ -198,9 +190,14 @@ type CloseRequest struct {
 }
 
 type FilledStatus struct {
-	OrderId int     `json:"oid"`
+	OrderID int     `json:"oid"`
 	AvgPx   float64 `json:"avgPx,string"`
 	TotalSz float64 `json:"totalSz,string"`
+	Cloid   string  `json:"cloid,omitempty"`
+}
+type RestingStatus struct {
+	OrderID int    `json:"oid"`
+	Cloid   string `json:"cloid,omitempty"`
 }
 
 type Liquidation struct {
@@ -211,9 +208,9 @@ type Liquidation struct {
 
 type UpdateLeverageAction struct {
 	Type     string `msgpack:"type" json:"type"`
-	Asset    int    `msgpack:"asset" json:"asset"`
-	IsCross  bool   `msgpack:"isCross" json:"isCross"`
-	Leverage int    `msgpack:"leverage" json:"leverage"`
+	Asset    int    `json:"asset"`
+	IsCross  bool   `json:"isCross"`
+	Leverage int    `json:"leverage"`
 }
 
 type DefaultExchangeResponse struct {
@@ -223,7 +220,6 @@ type DefaultExchangeResponse struct {
 	} `json:"response"`
 }
 
-// Depending on Type this struct can has different non-nil fields
 type NonFundingDelta struct {
 	Type   string  `json:"type"`
 	Usdc   float64 `json:"usdc,string,omitempty"`
@@ -256,15 +252,15 @@ type Deposit struct {
 }
 
 type WithdrawAction struct {
-	Type             string `msgpack:"type" json:"type"`
-	Destination      string `msgpack:"destination" json:"destination"`
-	Amount           string `msgpack:"amount" json:"amount"`
-	Time             uint64 `msgpack:"time" json:"time"`
-	HyperliquidChain string `msgpack:"hyperliquidChain" json:"hyperliquidChain"`
-	SignatureChainID string `msgpack:"signatureChainId" json:"signatureChainId"`
+	Type             string `json:"type" msgpack:"type"`
+	Destination      string `json:"destination" msgpack:"destination"`
+	Amount           string `json:"amount" msgpack:"amount"`
+	Time             uint64 `json:"time" msgpack:"time"`
+	HyperliquidChain string `json:"hyperliquidChain" msgpack:"hyperliquidChain"`
+	SignatureChainID string `json:"signatureChainId" msgpack:"signatureChainId"`
 }
 
 type WithdrawResponse struct {
 	Status string `json:"status"`
-	Nonce  int64
+	Nonce  int64  `json:"nonce"`
 }

@@ -3,6 +3,7 @@ package hyperliquid
 import (
 	"fmt"
 	"math"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 )
@@ -12,20 +13,20 @@ type IExchangeAPI interface {
 	IClient
 
 	// Open orders
-	BulkOrders(requests []OrderRequest, grouping Grouping) (*PlaceOrderResponse, error)
-	Order(request OrderRequest, grouping Grouping) (*PlaceOrderResponse, error)
-	MarketOrder(coin string, size float64, slippage *float64) (*PlaceOrderResponse, error)
-	LimitOrder(orderType string, coin string, size float64, px float64, isBuy bool, reduceOnly bool) (*PlaceOrderResponse, error)
+	BulkOrders(requests []OrderRequest, grouping Grouping) (*OrderResponse, error)
+	Order(request OrderRequest, grouping Grouping) (*OrderResponse, error)
+	MarketOrder(coin string, size float64, slippage *float64) (*OrderResponse, error)
+	LimitOrder(orderType string, coin string, size float64, px float64, isBuy bool, reduceOnly bool) (*OrderResponse, error)
 
 	// Order management
 	CancelOrderByOID(coin string, orderID int) (any, error)
-	CancelOrderByCloid(symbol string, clientOrderId string) (*CancelOrderResponse, error)
+	CancelOrderByCloid(symbol string, clientOrderID string) (*OrderResponse, error)
 	BulkCancelOrders(cancels []CancelOidWire) (any, error)
-	BulkCancelOrdersByCloid(entries []CancelCloidWire) (*CancelOrderResponse, error)
+	BulkCancelOrdersByCloid(entries []CancelCloidWire) (*OrderResponse, error)
 
 	CancelAllOrdersByCoin(coin string) (any, error)
 	CancelAllOrders() (any, error)
-	ClosePosition(coin string) (*PlaceOrderResponse, error)
+	ClosePosition(coin string) (*OrderResponse, error)
 
 	// Account management
 	Withdraw(destination string, amount float64) (*WithdrawResponse, error)
@@ -39,6 +40,7 @@ type ExchangeAPI struct {
 	address      string
 	baseEndpoint string
 	meta         map[string]AssetInfo
+	spotMeta     map[string]AssetInfo
 	role         string
 }
 
@@ -58,6 +60,13 @@ func NewExchangeAPI(isMainnet bool) *ExchangeAPI {
 		api.debug("Error building meta map: %s", err)
 	}
 	api.meta = meta
+
+	spotMeta, err := api.infoAPI.BuildSpotMetaMap()
+	if err != nil {
+		api.SetDebugActive()
+		api.debug("Error building spot meta map: %s", err)
+	}
+	api.spotMeta = spotMeta
 	return &api
 }
 
@@ -75,14 +84,44 @@ func (api *ExchangeAPI) SlippagePrice(coin string, isBuy bool, slippage float64)
 	return CalculateSlippage(isBuy, marketPx, slippage)
 }
 
-// Open a market order.
+// GetSpotMarketPx returns the market price of a given spot coin
+// The coin parameter is the name of the coin
+//
+// Example:
+//
+//	api.GetSpotMarketPx("HYPE")
+func (api *InfoAPI) GetSpotMarketPx(coin string) (float64, error) {
+	spotPrices, err := api.GetAllSpotPrices()
+	if err != nil {
+		return 0, err
+	}
+	spotName := api.spotMeta[coin].SpotName
+	parsed, err := strconv.ParseFloat((*spotPrices)[spotName], 32)
+	if err != nil {
+		return 0, err
+	}
+	return parsed, nil
+}
+
+// SlippagePriceSpot is a helper function to calculate the slippage price for a spot coin.
+func (api *ExchangeAPI) SlippagePriceSpot(coin string, isBuy bool, slippage float64) float64 {
+	marketPx, err := api.infoAPI.GetSpotMarketPx(coin)
+	if err != nil {
+		api.debug("Error getting market price: %s", err)
+		return 0.0
+	}
+	slippagePrice := CalculateSlippage(isBuy, marketPx, slippage)
+	return slippagePrice
+}
+
+// MarketOrder places a market order.
 // Limit order with TIF=IOC and px=market price * (1 +- slippage).
 // Size determines the amount of the coin to buy/sell.
 //
 //	MarketOrder("BTC", 0.1, nil) // Buy 0.1 BTC
 //	MarketOrder("BTC", -0.1, nil) // Sell 0.1 BTC
 //	MarketOrder("BTC", 0.1, &slippage) // Buy 0.1 BTC with slippage
-func (api *ExchangeAPI) MarketOrder(coin string, size float64, slippage *float64) (*PlaceOrderResponse, error) {
+func (api *ExchangeAPI) MarketOrder(coin string, size float64, slippage *float64) (*OrderResponse, error) {
 	slpg := GetSlippage(slippage)
 	isBuy := IsBuy(size)
 	finalPx := api.SlippagePrice(coin, isBuy, slpg)
@@ -102,11 +141,38 @@ func (api *ExchangeAPI) MarketOrder(coin string, size float64, slippage *float64
 	return api.Order(orderRequest, GroupingNa)
 }
 
-// Open a limit order.
-// Order type can be Gtc, Ioc, Alo.
+// MarketOrderSpot is a market order for a spot coin.
+// It is used to buy/sell a spot coin.
+// Limit order with TIF=IOC and px=market price * (1 +- slippage).
+// Size determines the amount of the coin to buy/sell.
+//
+//	MarketOrderSpot("HYPE", 0.1, nil) // Buy 0.1 HYPE
+//	MarketOrderSpot("HYPE", -0.1, nil) // Sell 0.1 HYPE
+//	MarketOrderSpot("HYPE", 0.1, &slippage) // Buy 0.1 HYPE with slippage
+func (api *ExchangeAPI) MarketOrderSpot(coin string, size float64, slippage *float64) (*OrderResponse, error) {
+	slpg := GetSlippage(slippage)
+	isBuy := size > 0
+	finalPx := api.SlippagePriceSpot(coin, isBuy, slpg)
+	orderType := OrderType{
+		Limit: &LimitOrderType{
+			Tif: TifIoc,
+		},
+	}
+	orderRequest := OrderRequest{
+		Coin:       coin,
+		IsBuy:      isBuy,
+		Sz:         math.Abs(size),
+		LimitPx:    finalPx,
+		OrderType:  orderType,
+		ReduceOnly: false,
+	}
+	return api.OrderSpot(orderRequest, GroupingNa)
+}
+
+// LimitOrder places a limit order
 // Size determines the amount of the coin to buy/sell.
 // See the constants TifGtc, TifIoc, TifAlo.
-func (api *ExchangeAPI) LimitOrder(orderType string, coin string, size float64, px float64, reduceOnly bool) (*PlaceOrderResponse, error) {
+func (api *ExchangeAPI) LimitOrder(orderType string, coin string, size float64, px float64, reduceOnly bool) (*OrderResponse, error) {
 	// check if the order type is valid
 	if orderType != TifGtc && orderType != TifIoc && orderType != TifAlo {
 		return nil, APIError{Message: fmt.Sprintf("Invalid order type: %s. Available types: %s, %s, %s", orderType, TifGtc, TifIoc, TifAlo)}
@@ -128,7 +194,7 @@ func (api *ExchangeAPI) LimitOrder(orderType string, coin string, size float64, 
 }
 
 // Close all positions for a given coin. They are closing with a market order.
-func (api *ExchangeAPI) ClosePosition(coin string) (*PlaceOrderResponse, error) {
+func (api *ExchangeAPI) ClosePosition(coin string) (*OrderResponse, error) {
 	// Get all positions and find the one for the coin
 	// Then just make MarketOpen with the reverse size
 	state, err := api.infoAPI.GetUserState(api.AccountAddress())
@@ -167,19 +233,30 @@ func (api *ExchangeAPI) ClosePosition(coin string) (*PlaceOrderResponse, error) 
 	return nil, APIError{Message: fmt.Sprintf("No position found for %s", coin)}
 }
 
+// OrderSpot places a spot order
+func (api *ExchangeAPI) OrderSpot(request OrderRequest, grouping Grouping) (*OrderResponse, error) {
+	return api.BulkOrders([]OrderRequest{request}, grouping, true)
+}
+
 // Place single order
-func (api *ExchangeAPI) Order(request OrderRequest, grouping Grouping) (*PlaceOrderResponse, error) {
-	return api.BulkOrders([]OrderRequest{request}, grouping)
+func (api *ExchangeAPI) Order(request OrderRequest, grouping Grouping) (*OrderResponse, error) {
+	return api.BulkOrders([]OrderRequest{request}, grouping, false)
 }
 
 // Place orders in bulk
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#place-an-order
-func (api *ExchangeAPI) BulkOrders(requests []OrderRequest, grouping Grouping) (*PlaceOrderResponse, error) {
+// Place orders in bulk
+// https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#place-an-order
+func (api *ExchangeAPI) BulkOrders(requests []OrderRequest, grouping Grouping, isSpot ...bool) (*OrderResponse, error) {
 	var wires []OrderWire
-	for _, req := range requests {
-		wires = append(wires, OrderRequestToWire(req, api.meta))
+	var meta map[string]AssetInfo = api.meta
+	if len(isSpot) > 0 && isSpot[0] {
+		meta = api.spotMeta
 	}
-	timestamp := NextNonce()
+	for _, req := range requests {
+		wires = append(wires, req.ToWire(meta))
+	}
+	timestamp := GetNonce()
 	action := OrderWiresToOrderAction(wires, grouping)
 	v, r, s, err := api.SignL1Action(action, timestamp)
 	if err != nil {
@@ -190,14 +267,14 @@ func (api *ExchangeAPI) BulkOrders(requests []OrderRequest, grouping Grouping) (
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: api.effectiveVaultAddress(),
+		VaultAddress: api.VaultAddress(),
 	}
-	return MakeUniversalRequest[PlaceOrderResponse](api, request)
+	return MakeUniversalRequest[OrderResponse](api, request)
 }
 
 // Cancel order(s)
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#cancel-order-s
-func (api *ExchangeAPI) BulkCancelOrders(cancels []CancelOidWire) (*CancelOrderResponse, error) {
+func (api *ExchangeAPI) BulkCancelOrders(cancels []CancelOidWire) (*OrderResponse, error) {
 	timestamp := NextNonce()
 	action := CancelOidOrderAction{
 		Type:    "cancel",
@@ -212,18 +289,21 @@ func (api *ExchangeAPI) BulkCancelOrders(cancels []CancelOidWire) (*CancelOrderR
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: api.effectiveVaultAddress(),
+		VaultAddress: api.VaultAddress(),
 	}
-	return MakeUniversalRequest[CancelOrderResponse](api, request)
+	return MakeUniversalRequest[OrderResponse](api, request)
 }
 
 // Bulk modify orders
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#modify-multiple-orders
-func (api *ExchangeAPI) BulkModifyOrders(modifyRequests []ModifyOrderRequest) (*PlaceOrderResponse, error) {
+func (api *ExchangeAPI) BulkModifyOrders(modifyRequests []ModifyOrderRequest, isSpot ...bool) (*OrderResponse, error) {
 	wires := []ModifyOrderWire{}
-
+	meta := api.meta
+	if len(isSpot) > 0 && isSpot[0] {
+		meta = api.spotMeta
+	}
 	for _, req := range modifyRequests {
-		wires = append(wires, ModifyOrderRequestToWire(req, api.meta))
+		wires = append(wires, req.ToWire(meta))
 	}
 	action := ModifyOrderAction{
 		Type:     "batchModify",
@@ -239,17 +319,17 @@ func (api *ExchangeAPI) BulkModifyOrders(modifyRequests []ModifyOrderRequest) (*
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(rVal, sVal, vVal),
-		VaultAddress: api.effectiveVaultAddress(),
+		VaultAddress: api.VaultAddress(),
 	}
-	return MakeUniversalRequest[PlaceOrderResponse](api, request)
+	return MakeUniversalRequest[OrderResponse](api, request)
 }
 
 // Cancel exact order by OID
-func (api *ExchangeAPI) CancelOrderByOID(coin string, orderID int) (*CancelOrderResponse, error) {
-	return api.BulkCancelOrders([]CancelOidWire{{Asset: api.meta[coin].AssetId, Oid: int(orderID)}})
+func (api *ExchangeAPI) CancelOrderByOID(coin string, orderID int) (*OrderResponse, error) {
+	return api.BulkCancelOrders([]CancelOidWire{{Asset: api.meta[coin].AssetID, Oid: int(orderID)}})
 }
 
-func (api *ExchangeAPI) BulkCancelOrdersByCloid(entries []CancelCloidWire) (*CancelOrderResponse, error) {
+func (api *ExchangeAPI) BulkCancelOrdersByCloid(entries []CancelCloidWire) (*OrderResponse, error) {
 	if len(entries) == 0 {
 		return nil, APIError{Message: "no cloID entries provided"}
 	}
@@ -270,22 +350,22 @@ func (api *ExchangeAPI) BulkCancelOrdersByCloid(entries []CancelCloidWire) (*Can
 		Action:       action,
 		Nonce:        nonceValue,
 		Signature:    ToTypedSig(verifiedR, verifiedS, verifiedV),
-		VaultAddress: api.effectiveVaultAddress(),
+		VaultAddress: api.VaultAddress(),
 	}
-	return MakeUniversalRequest[CancelOrderResponse](api, request)
+	return MakeUniversalRequest[OrderResponse](api, request)
 }
 
 // Cancel order(s) by client order ID
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#cancel-order-s-by-cloid
-func (api *ExchangeAPI) CancelOrderByCloid(symbol string, cloid string) (*CancelOrderResponse, error) {
+func (api *ExchangeAPI) CancelOrderByCloid(symbol string, cloid string) (*OrderResponse, error) {
 	return api.BulkCancelOrdersByCloid([]CancelCloidWire{{
-		Asset: api.meta[symbol].AssetId,
+		Asset: api.meta[symbol].AssetID,
 		Cloid: cloid,
 	}})
 }
 
 // Cancel all orders for a given coin
-func (api *ExchangeAPI) CancelAllOrdersByCoin(coin string) (*CancelOrderResponse, error) {
+func (api *ExchangeAPI) CancelAllOrdersByCoin(coin string) (*OrderResponse, error) {
 	orders, err := api.infoAPI.GetOpenOrders(api.AccountAddress())
 	if err != nil {
 		api.debug("Error getting orders: %s", err)
@@ -296,13 +376,13 @@ func (api *ExchangeAPI) CancelAllOrdersByCoin(coin string) (*CancelOrderResponse
 		if coin != order.Coin {
 			continue
 		}
-		cancels = append(cancels, CancelOidWire{Asset: api.meta[coin].AssetId, Oid: int(order.Oid)})
+		cancels = append(cancels, CancelOidWire{Asset: api.meta[coin].AssetID, Oid: int(order.Oid)})
 	}
 	return api.BulkCancelOrders(cancels)
 }
 
 // Cancel all open orders
-func (api *ExchangeAPI) CancelAllOrders() (*CancelOrderResponse, error) {
+func (api *ExchangeAPI) CancelAllOrders() (*OrderResponse, error) {
 	orders, err := api.infoAPI.GetOpenOrders(api.AccountAddress())
 	if err != nil {
 		api.debug("Error getting orders: %s", err)
@@ -313,7 +393,7 @@ func (api *ExchangeAPI) CancelAllOrders() (*CancelOrderResponse, error) {
 	}
 	var cancels []CancelOidWire
 	for _, order := range *orders {
-		cancels = append(cancels, CancelOidWire{Asset: api.meta[order.Coin].AssetId, Oid: int(order.Oid)})
+		cancels = append(cancels, CancelOidWire{Asset: api.meta[order.Coin].AssetID, Oid: int(order.Oid)})
 	}
 	return api.BulkCancelOrders(cancels)
 }
@@ -324,7 +404,7 @@ func (api *ExchangeAPI) UpdateLeverage(coin string, isCross bool, leverage int) 
 	timestamp := NextNonce()
 	action := UpdateLeverageAction{
 		Type:     "updateLeverage",
-		Asset:    api.meta[coin].AssetId,
+		Asset:    api.meta[coin].AssetID,
 		IsCross:  isCross,
 		Leverage: leverage,
 	}
@@ -337,7 +417,7 @@ func (api *ExchangeAPI) UpdateLeverage(coin string, isCross bool, leverage int) 
 		Action:       action,
 		Nonce:        timestamp,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: api.effectiveVaultAddress(),
+		VaultAddress: api.VaultAddress(),
 	}
 	return MakeUniversalRequest[DefaultExchangeResponse](api, request)
 }
@@ -364,7 +444,7 @@ func (api *ExchangeAPI) Withdraw(destination string, amount float64) (*WithdrawR
 		Action:       action,
 		Nonce:        nonce,
 		Signature:    ToTypedSig(r, s, v),
-		VaultAddress: api.effectiveVaultAddress(),
+		VaultAddress: api.VaultAddress(),
 	}
 	return MakeUniversalRequest[WithdrawResponse](api, request)
 }
@@ -381,11 +461,11 @@ func (api *ExchangeAPI) getChainParams() (string, string) {
 func (api *ExchangeAPI) BuildBulkOrdersEIP712(requests []OrderRequest, grouping Grouping) (apitypes.TypedData, error) {
 	var wires []OrderWire
 	for _, req := range requests {
-		wires = append(wires, OrderRequestToWire(req, api.meta))
+		wires = append(wires, req.ToWire(api.meta))
 	}
 	timestamp := NextNonce()
 	action := OrderWiresToOrderAction(wires, grouping)
-	vaultAddress := api.effectiveVaultAddress()
+	vaultAddress := api.VaultAddress()
 	srequest, err := api.BuildEIP712Message(action, timestamp, vaultAddress)
 	if err != nil {
 		api.debug("Error building EIP712 message: %s", err)
@@ -397,12 +477,4 @@ func (api *ExchangeAPI) BuildBulkOrdersEIP712(requests []OrderRequest, grouping 
 // Build order EIP712 message
 func (api *ExchangeAPI) BuildOrderEIP712(request OrderRequest, grouping Grouping) (apitypes.TypedData, error) {
 	return api.BuildBulkOrdersEIP712([]OrderRequest{request}, grouping)
-}
-
-// Return the vaultAddress for sub-accounts and vaults
-func (api *ExchangeAPI) effectiveVaultAddress() string {
-	if api.role == "vault" || api.role == "subAccount" {
-		return api.AccountAddress()
-	}
-	return ""
 }

@@ -6,8 +6,8 @@ import (
 )
 
 func GetHyperliquidAPI() *Hyperliquid {
-	hl := NewHyperliquid(&HyperliquidClientConfig{
-		IsMainnet:      true,
+	hl := NewHyperliquid(&ClientConfig{
+		IsMainnet:      false,
 		AccountAddress: os.Getenv("TEST_ADDRESS"),
 		PrivateKey:     os.Getenv("TEST_PRIVATE_KEY"),
 	})
@@ -25,8 +25,8 @@ func TestHyperliquid_CheckFieldsConsistency(t *testing.T) {
 	if hl.InfoAPI.baseEndpoint != "/info" {
 		t.Errorf("baseEndpoint = %v, want %v", hl.InfoAPI.baseEndpoint, "/info")
 	}
-	if hl.InfoAPI.baseUrl != "https://api.hyperliquid.xyz" {
-		t.Errorf("baseUrl = %v, want %v", hl.InfoAPI.baseUrl, "https://api.hyperliquid.com")
+	if hl.InfoAPI.baseURL != "https://api.hyperliquid.xyz" {
+		t.Errorf("baseUrl = %v, want %v", hl.InfoAPI.baseURL, "https://api.hyperliquid.com")
 	}
 	hl.SetDebugActive()
 	if hl.InfoAPI.Debug != hl.ExchangeAPI.Debug {
